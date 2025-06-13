@@ -161,7 +161,7 @@ func (t *Tank) Draw() {
 		turretColor = rl.DarkBlue
 	} else {
 		bodyColor = rl.Red
-		turretColor = rl.DarkRed
+		turretColor = rl.Maroon // Заменил DarkRed на Maroon
 	}
 
 	// Draw tank body with rotation

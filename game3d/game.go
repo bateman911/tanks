@@ -1,6 +1,7 @@
 package game3d
 
 import (
+	"fmt"
 	"math"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -186,9 +187,6 @@ func (g *Game) handleMouseAiming() {
 	deltaX := mousePos.X - screenCenter.X
 	deltaY := mousePos.Y - screenCenter.Y
 	
-	// Чувствительность мыши
-	sensitivity := float32(0.003)
-	
 	// Вычисляем угол поворота башни относительно корпуса танка
 	mouseAngle := math.Atan2(float64(deltaX), float64(-deltaY)) // -deltaY потому что Y инвертирован
 	
@@ -372,7 +370,8 @@ func (g *Game) drawUI() {
 			aliveEnemies++
 		}
 	}
-	rl.DrawText(rl.TextFormat("Enemies: %d", aliveEnemies), 10, 60, 20, rl.Black)
+	enemyText := fmt.Sprintf("Enemies: %d", aliveEnemies)
+	rl.DrawText(enemyText, 10, 60, 20, rl.Black)
 
 	// Controls
 	controlsText := "WASD - Move, Mouse - Aim, LMB/Space - Shoot, RMB - Precise Aim, Tab - Toggle Mouse"
@@ -419,6 +418,6 @@ func (g *Game) drawAimingCircle() {
 	
 	// Показываем процент точности
 	accuracyPercent := int32(accuracy * 100)
-	accuracyText := rl.TextFormat("Accuracy: %d%%", accuracyPercent)
+	accuracyText := fmt.Sprintf("Accuracy: %d%%", accuracyPercent)
 	rl.DrawText(accuracyText, int32(centerX-60), int32(centerY-g.aimingCircle.CurrentRadius-30), 20, circleColor)
 }
