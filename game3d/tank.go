@@ -2,35 +2,36 @@ package game3d
 
 import (
 	"math"
+	"math/rand"
 	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
 type Tank struct {
-	Position      rl.Vector3
-	Rotation      float32 // Body rotation
+	Position       rl.Vector3
+	Rotation       float32 // Body rotation
 	TurretRotation float32 // Turret rotation relative to body
-	Speed         float32
-	TurnSpeed     float32
-	Health        int
-	MaxHealth     int
-	IsPlayer      bool
-	LastShot      time.Time
-	ShotCooldown  time.Duration
+	Speed          float32
+	TurnSpeed      float32
+	Health         int
+	MaxHealth      int
+	IsPlayer       bool
+	LastShot       time.Time
+	ShotCooldown   time.Duration
 }
 
 func NewTank(position rl.Vector3, isPlayer bool) *Tank {
 	return &Tank{
-		Position:      position,
-		Rotation:      0,
+		Position:       position,
+		Rotation:       0,
 		TurretRotation: 0,
-		Speed:         0.2,
-		TurnSpeed:     0.03,
-		Health:        100,
-		MaxHealth:     100,
-		IsPlayer:      isPlayer,
-		ShotCooldown:  time.Millisecond * 800,
+		Speed:          0.2,
+		TurnSpeed:      0.03,
+		Health:         100,
+		MaxHealth:      100,
+		IsPlayer:       isPlayer,
+		ShotCooldown:   time.Millisecond * 800,
 	}
 }
 
@@ -76,6 +77,20 @@ func (t *Tank) TurretRight() {
 	t.TurretRotation += t.TurnSpeed * 0.8
 }
 
+// Новый метод для установки поворота башни напрямую (для мыши)
+func (t *Tank) SetTurretRotation(angle float32) {
+	t.TurretRotation = angle
+	
+	// Ограничиваем поворот башни (например, ±180 градусов)
+	maxTurretAngle := float32(math.Pi)
+	if t.TurretRotation > maxTurretAngle {
+		t.TurretRotation = maxTurretAngle
+	}
+	if t.TurretRotation < -maxTurretAngle {
+		t.TurretRotation = -maxTurretAngle
+	}
+}
+
 func (t *Tank) Shoot() *Bullet {
 	now := time.Now()
 	if now.Sub(t.LastShot) < t.ShotCooldown {
@@ -95,6 +110,35 @@ func (t *Tank) Shoot() *Bullet {
 	bulletPos := rl.NewVector3(bulletX, bulletY, bulletZ)
 
 	return NewBullet(bulletPos, totalRotation, t.IsPlayer)
+}
+
+// Новый метод стрельбы с учетом точности
+func (t *Tank) ShootWithAccuracy(accuracyRadius float32) *Bullet {
+	now := time.Now()
+	if now.Sub(t.LastShot) < t.ShotCooldown {
+		return nil
+	}
+
+	t.LastShot = now
+
+	// Calculate bullet spawn position (at the end of the cannon)
+	totalRotation := t.Rotation + t.TurretRotation
+	cannonLength := float32(3.0)
+	
+	bulletX := t.Position.X + float32(math.Sin(float64(totalRotation)))*cannonLength
+	bulletZ := t.Position.Z + float32(math.Cos(float64(totalRotation)))*cannonLength
+	bulletY := t.Position.Y + 1.0
+
+	bulletPos := rl.NewVector3(bulletX, bulletY, bulletZ)
+
+	// Добавляем разброс в зависимости от точности
+	// Чем больше accuracyRadius, тем больше разброс
+	spreadFactor := accuracyRadius / 100.0 // Нормализуем разброс
+	angleSpread := (rand.Float32() - 0.5) * spreadFactor * 0.2 // ±10% от разброса
+	
+	finalAngle := totalRotation + angleSpread
+
+	return NewBullet(bulletPos, finalAngle, t.IsPlayer)
 }
 
 func (t *Tank) TakeDamage(damage int) {
@@ -120,13 +164,7 @@ func (t *Tank) Draw() {
 		turretColor = rl.DarkRed
 	}
 
-	// Draw tank body
-	rl.DrawCubeV(t.Position, rl.NewVector3(3, 1, 4), bodyColor)
-	
 	// Draw tank body with rotation
-	bodyMatrix := rl.MatrixRotateY(t.Rotation)
-	bodyMatrix = rl.MatrixMultiply(bodyMatrix, rl.MatrixTranslate(t.Position.X, t.Position.Y, t.Position.Z))
-	
 	rl.PushMatrix()
 	rl.Translatef(t.Position.X, t.Position.Y, t.Position.Z)
 	rl.Rotatef(t.Rotation*rl.Rad2deg, 0, 1, 0)
@@ -135,7 +173,6 @@ func (t *Tank) Draw() {
 
 	// Draw turret
 	turretY := t.Position.Y + 0.7
-	turretPos := rl.NewVector3(t.Position.X, turretY, t.Position.Z)
 	
 	rl.PushMatrix()
 	rl.Translatef(t.Position.X, turretY, t.Position.Z)

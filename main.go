@@ -13,6 +13,9 @@ func main() {
 	
 	rl.SetTargetFPS(60)
 	
+	// Disable cursor by default for mouse aiming
+	rl.DisableCursor()
+	
 	// Initialize game
 	game := game3d.NewGame()
 	

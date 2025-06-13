@@ -11,12 +11,23 @@ const (
 )
 
 type Game struct {
-	camera    rl.Camera3D
-	player    *Tank
-	enemies   []*Tank
-	bullets   []*Bullet
-	terrain   *Terrain
-	gameTime  int
+	camera         rl.Camera3D
+	player         *Tank
+	enemies        []*Tank
+	bullets        []*Bullet
+	terrain        *Terrain
+	gameTime       int
+	mouseAiming    bool
+	aimingCircle   AimingCircle
+}
+
+type AimingCircle struct {
+	CurrentRadius float32
+	MinRadius     float32
+	MaxRadius     float32
+	ShrinkSpeed   float32
+	ExpandSpeed   float32
+	IsAiming      bool
 }
 
 func NewGame() *Game {
@@ -42,12 +53,24 @@ func NewGame() *Game {
 	// Create terrain
 	terrain := NewTerrain()
 
+	// Initialize aiming circle
+	aimingCircle := AimingCircle{
+		CurrentRadius: 50.0,
+		MinRadius:     20.0,
+		MaxRadius:     80.0,
+		ShrinkSpeed:   1.5,
+		ExpandSpeed:   2.0,
+		IsAiming:      false,
+	}
+
 	return &Game{
-		camera:  camera,
-		player:  player,
-		enemies: enemies,
-		bullets: make([]*Bullet, 0),
-		terrain: terrain,
+		camera:       camera,
+		player:       player,
+		enemies:      enemies,
+		bullets:      make([]*Bullet, 0),
+		terrain:      terrain,
+		mouseAiming:  true,
+		aimingCircle: aimingCircle,
 	}
 }
 
@@ -57,6 +80,9 @@ func (g *Game) Update() {
 	// Update player
 	g.player.Update()
 	g.handleInput()
+
+	// Update aiming system
+	g.updateAiming()
 
 	// Update enemies with AI
 	for _, enemy := range g.enemies {
@@ -95,29 +121,96 @@ func (g *Game) handleInput() {
 	// Tank movement
 	if rl.IsKeyDown(rl.KeyW) {
 		g.player.MoveForward()
+		g.aimingCircle.IsAiming = false // Движение ухудшает точность
 	}
 	if rl.IsKeyDown(rl.KeyS) {
 		g.player.MoveBackward()
+		g.aimingCircle.IsAiming = false
 	}
 	if rl.IsKeyDown(rl.KeyA) {
 		g.player.TurnLeft()
+		g.aimingCircle.IsAiming = false
 	}
 	if rl.IsKeyDown(rl.KeyD) {
 		g.player.TurnRight()
+		g.aimingCircle.IsAiming = false
 	}
 
-	// Turret rotation
-	if rl.IsKeyDown(rl.KeyLeft) {
-		g.player.TurretLeft()
+	// Mouse aiming
+	if g.mouseAiming {
+		g.handleMouseAiming()
+	} else {
+		// Keyboard turret rotation (fallback)
+		if rl.IsKeyDown(rl.KeyLeft) {
+			g.player.TurretLeft()
+			g.aimingCircle.IsAiming = false
+		}
+		if rl.IsKeyDown(rl.KeyRight) {
+			g.player.TurretRight()
+			g.aimingCircle.IsAiming = false
+		}
 	}
-	if rl.IsKeyDown(rl.KeyRight) {
-		g.player.TurretRight()
+
+	// Toggle aiming mode
+	if rl.IsKeyPressed(rl.KeyTab) {
+		g.mouseAiming = !g.mouseAiming
+		if g.mouseAiming {
+			rl.DisableCursor()
+		} else {
+			rl.EnableCursor()
+		}
 	}
 
 	// Shooting
-	if rl.IsKeyPressed(rl.KeySpace) {
-		if bullet := g.player.Shoot(); bullet != nil {
+	if rl.IsMouseButtonPressed(rl.MouseLeftButton) || rl.IsKeyPressed(rl.KeySpace) {
+		if bullet := g.player.ShootWithAccuracy(g.aimingCircle.CurrentRadius); bullet != nil {
 			g.bullets = append(g.bullets, bullet)
+			g.aimingCircle.IsAiming = false // После выстрела точность сбрасывается
+		}
+	}
+
+	// Right mouse button for aiming
+	if rl.IsMouseButtonDown(rl.MouseRightButton) {
+		g.aimingCircle.IsAiming = true
+	} else if rl.IsMouseButtonReleased(rl.MouseRightButton) {
+		g.aimingCircle.IsAiming = false
+	}
+}
+
+func (g *Game) handleMouseAiming() {
+	// Получаем позицию мыши
+	mousePos := rl.GetMousePosition()
+	screenCenter := rl.NewVector2(float32(rl.GetScreenWidth())/2, float32(rl.GetScreenHeight())/2)
+	
+	// Вычисляем смещение от центра экрана
+	deltaX := mousePos.X - screenCenter.X
+	deltaY := mousePos.Y - screenCenter.Y
+	
+	// Чувствительность мыши
+	sensitivity := float32(0.003)
+	
+	// Вычисляем угол поворота башни относительно корпуса танка
+	mouseAngle := math.Atan2(float64(deltaX), float64(-deltaY)) // -deltaY потому что Y инвертирован
+	
+	// Устанавливаем поворот башни
+	g.player.SetTurretRotation(float32(mouseAngle))
+	
+	// Возвращаем курсор в центр экрана для непрерывного управления
+	rl.SetMousePosition(int(screenCenter.X), int(screenCenter.Y))
+}
+
+func (g *Game) updateAiming() {
+	if g.aimingCircle.IsAiming {
+		// Сведение - уменьшаем круг точности
+		g.aimingCircle.CurrentRadius -= g.aimingCircle.ShrinkSpeed
+		if g.aimingCircle.CurrentRadius < g.aimingCircle.MinRadius {
+			g.aimingCircle.CurrentRadius = g.aimingCircle.MinRadius
+		}
+	} else {
+		// Разведение - увеличиваем круг точности
+		g.aimingCircle.CurrentRadius += g.aimingCircle.ExpandSpeed
+		if g.aimingCircle.CurrentRadius > g.aimingCircle.MaxRadius {
+			g.aimingCircle.CurrentRadius = g.aimingCircle.MaxRadius
 		}
 	}
 }
@@ -153,9 +246,13 @@ func (g *Game) updateEnemyAI(enemy *Tank) {
 		}
 	}
 
+	// Aim turret at player
+	turretAngle := math.Atan2(float64(dx), float64(dz)) - float64(enemy.Rotation)
+	enemy.SetTurretRotation(float32(turretAngle))
+
 	// Shoot occasionally
 	if g.gameTime%180 == 0 && distance < 30 {
-		if bullet := enemy.Shoot(); bullet != nil {
+		if bullet := enemy.ShootWithAccuracy(30.0); bullet != nil {
 			g.bullets = append(g.bullets, bullet)
 		}
 	}
@@ -258,6 +355,11 @@ func (g *Game) drawUI() {
 	// Health text
 	rl.DrawText("Health", 10, 35, 20, rl.Black)
 
+	// Aiming circle (crosshair)
+	if g.mouseAiming {
+		g.drawAimingCircle()
+	}
+
 	// Game status
 	if g.player.Health <= 0 {
 		rl.DrawText("GAME OVER - Press ESC to exit", 300, 350, 30, rl.Red)
@@ -273,5 +375,50 @@ func (g *Game) drawUI() {
 	rl.DrawText(rl.TextFormat("Enemies: %d", aliveEnemies), 10, 60, 20, rl.Black)
 
 	// Controls
-	rl.DrawText("WASD - Move, Arrow Keys - Turret, Space - Shoot", 10, 720, 20, rl.DarkGray)
+	controlsText := "WASD - Move, Mouse - Aim, LMB/Space - Shoot, RMB - Precise Aim, Tab - Toggle Mouse"
+	rl.DrawText(controlsText, 10, 720, 16, rl.DarkGray)
+	
+	// Aiming mode indicator
+	if g.mouseAiming {
+		rl.DrawText("Mouse Aiming: ON", 10, 85, 20, rl.Green)
+	} else {
+		rl.DrawText("Mouse Aiming: OFF", 10, 85, 20, rl.Red)
+	}
+}
+
+func (g *Game) drawAimingCircle() {
+	screenWidth := float32(rl.GetScreenWidth())
+	screenHeight := float32(rl.GetScreenHeight())
+	centerX := screenWidth / 2
+	centerY := screenHeight / 2
+
+	// Цвет круга зависит от точности
+	var circleColor rl.Color
+	accuracy := (g.aimingCircle.MaxRadius - g.aimingCircle.CurrentRadius) / (g.aimingCircle.MaxRadius - g.aimingCircle.MinRadius)
+	
+	if accuracy > 0.8 {
+		circleColor = rl.Green
+	} else if accuracy > 0.5 {
+		circleColor = rl.Yellow
+	} else {
+		circleColor = rl.Red
+	}
+
+	// Рисуем круг точности
+	rl.DrawCircleLines(int32(centerX), int32(centerY), g.aimingCircle.CurrentRadius, circleColor)
+	
+	// Рисуем крестик в центре
+	crossSize := float32(10)
+	rl.DrawLine(int32(centerX-crossSize), int32(centerY), int32(centerX+crossSize), int32(centerY), rl.White)
+	rl.DrawLine(int32(centerX), int32(centerY-crossSize), int32(centerX), int32(centerY+crossSize), rl.White)
+	
+	// Показываем статус сведения
+	if g.aimingCircle.IsAiming {
+		rl.DrawText("AIMING...", int32(centerX-40), int32(centerY+g.aimingCircle.CurrentRadius+20), 20, circleColor)
+	}
+	
+	// Показываем процент точности
+	accuracyPercent := int32(accuracy * 100)
+	accuracyText := rl.TextFormat("Accuracy: %d%%", accuracyPercent)
+	rl.DrawText(accuracyText, int32(centerX-60), int32(centerY-g.aimingCircle.CurrentRadius-30), 20, circleColor)
 }
