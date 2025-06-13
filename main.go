@@ -1,19 +1,24 @@
 package main
 
 import (
-	"log"
+	"tanks3d/game3d"
 
-	"github.com/hajimehoshi/ebiten/v2"
-	"tanks/game"
+	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
 func main() {
-	ebiten.SetWindowSize(1024, 768)
-	ebiten.SetWindowTitle("Tanks - World of Tanks Style Game")
-	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
-
-	g := game.NewGame()
-	if err := ebiten.RunGame(g); err != nil {
-		log.Fatal(err)
+	// Initialize window
+	rl.InitWindow(1024, 768, "3D Tanks - World of Tanks Style")
+	defer rl.CloseWindow()
+	
+	rl.SetTargetFPS(60)
+	
+	// Initialize game
+	game := game3d.NewGame()
+	
+	// Game loop
+	for !rl.WindowShouldClose() {
+		game.Update()
+		game.Draw()
 	}
 }
